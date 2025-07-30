@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบเช็คชื่อนักเรียน</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Sarabun', sans-serif;
+        }
+        .camera-container {
+            position: relative;
+            width: 100%;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+        #video {
+            width: 100%;
+            height: 300px;
+            object-fit: cover;
+            border-radius: 12px;
+            background: #f3f4f6;
+        }
+        #canvas {
+            display: none;
+        }
+        .status-early {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+        }
+        .status-late {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+        }
+        .status-ontime {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: white;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
+    <div class="container mx-auto px-4 py-6 max-w-md">
+        <!-- Header -->
+        <div class="bg-white rounded-2xl shadow-lg p-6 mb-6">
+            <h1 class="text-2xl font-bold text-gray-800 text-center mb-2">ระบบเช็คชื่อนักเรียน</h1>
+            <div class="text-center">
+                <div id="currentTime" class="text-lg font-semibold text-gray-600 mb-2"></div>
+                <div id="attendanceStatus" class="px-4 py-2 rounded-full text-sm font-medium inline-block">
+                    กำลังตรวจสอบเวลา...
+                </div>
+            </div>
+        </div>
+
+        <!-- Student Info -->
+        <div class="bg-white rounded-2xl shadow-lg p-6 mb-6">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">ข้อมูลนักเรียน</h2>
+            <div class="space-y-3">
+                <input type="text" id="studentName" placeholder="ชื่อ-นามสกุล" 
+                       class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                <input type="text" id="studentId" placeholder="รหัสนักเรียน" 
+                       class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                <input type="text" id="className" placeholder="ชั้นเรียน (เช่น ม.1/1, ป.6/2)" 
+                       class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+            </div>
+        </div>
+
+        <!-- Camera Section -->
+        <div class="bg-white rounded-2xl shadow-lg p-6 mb-6">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">ถ่ายรูปเป็นหลักฐาน</h2>
+            <div class="camera-container mb-4">
+                <video id="video" autoplay playsinline></video>
+                <canvas id="canvas"></canvas>
+            </div>
+            <div class="flex gap-3">
+                <button id="startCamera" class="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-medium py-3 px-4 rounded-lg transition-colors">
+                    📷 เปิดกล้อง
+                </button>
+                <button id="capturePhoto" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-medium py-3 px-4 rounded-lg transition-colors" disabled>
+                    📸 ถ่ายรูป
+                </button>
+            </div>
+            <div id="photoPreview" class="mt-4 hidden">
+                <p class="text-sm text-gray-600 mb-2">รูปที่ถ่าย:</p>
+                <img id="capturedImage" class="w-full h-48 object-cover rounded-lg border-2 border-green-200">
+            </div>
+        </div>
+
+        <!-- Submit Section -->
+        <div class="bg-white rounded-2xl shadow-lg p-6">
+            <button id="submitAttendance" class="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-4 px-6 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                📤 ส่งข้อมูลการเช็คชื่อผ่าน LINE
+            </button>
+        </div>
+
+        <!-- Status Messages -->
+        <div id="statusMessage" class="mt-4 p-4 rounded-lg hidden"></div>
+    </div>
+
+    <script>
+        let stream = null;
+        let capturedImageData = null;
+
+        // Update time and attendance status
+        function updateTimeAndStatus() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('th-TH', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            const dateString = now.toLocaleDateString('th-TH', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+            
+            document.getElementById('currentTime').textContent = `${dateString} ${timeString}`;
+            
+            const currentHour = now.getHours();
+            const currentMinute = now.getMinutes();
+            const currentTimeInMinutes = currentHour * 60 + currentMinute;
+            
+            const startTime = 7 * 60; // 07:00
+            const endTime = 8 * 60 + 30; // 08:30
+            
+            const statusElement = document.getElementById('attendanceStatus');
+            
+            if (currentTimeInMinutes < startTime) {
+                statusElement.textContent = '🌅 มาเร็ว (ก่อน 07:00)';
+                statusElement.className = 'px-4 py-2 rounded-full text-sm font-medium inline-block status-early';
+            } else if (currentTimeInMinutes <= endTime) {
+                statusElement.textContent = '✅ มาตรงเวลา (07:00-08:30)';
+                statusElement.className = 'px-4 py-2 rounded-full text-sm font-medium inline-block status-ontime';
+            } else {
+                statusElement.textContent = '⚠️ มาสาย (หลัง 08:30)';
+                statusElement.className = 'px-4 py-2 rounded-full text-sm font-medium inline-block status-late';
+            }
+        }
+
+        // Start camera
+        document.getElementById('startCamera').addEventListener('click', async () => {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        facingMode: 'user'
+                    } 
+                });
+                document.getElementById('video').srcObject = stream;
+                document.getElementById('capturePhoto').disabled = false;
+                showStatus('เปิดกล้องสำเร็จ! 📷', 'success');
+            } catch (error) {
+                showStatus('ไม่สามารถเปิดกล้องได้ กรุณาอนุญาตการใช้งานกล้อง', 'error');
+            }
+        });
+
+        // Capture photo
+        document.getElementById('capturePhoto').addEventListener('click', () => {
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            const context = canvas.getContext('2d');
+            
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0);
+            
+            capturedImageData = canvas.toDataURL('image/jpeg', 0.8);
+            
+            const preview = document.getElementById('photoPreview');
+            const capturedImage = document.getElementById('capturedImage');
+            capturedImage.src = capturedImageData;
+            preview.classList.remove('hidden');
+            
+            document.getElementById('submitAttendance').disabled = false;
+            showStatus('ถ่ายรูปสำเร็จ! 📸', 'success');
+        });
+
+        // Submit attendance
+        document.getElementById('submitAttendance').addEventListener('click', () => {
+            const studentName = document.getElementById('studentName').value;
+            const studentId = document.getElementById('studentId').value;
+            const className = document.getElementById('className').value;
+            
+            if (!studentName || !studentId || !className || !capturedImageData) {
+                showStatus('กรุณากรอกข้อมูลให้ครบถ้วนและถ่ายรูป', 'error');
+                return;
+            }
+            
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('th-TH');
+            const dateString = now.toLocaleDateString('th-TH');
+            
+            const statusElement = document.getElementById('attendanceStatus');
+            const attendanceStatus = statusElement.textContent;
+            
+            // Create LINE message
+            const message = `📋 รายงานการเช็คชื่อ
+            
+👤 ชื่อ: ${studentName}
+🆔 รหัส: ${studentId}
+🏫 ชั้น: ${className}
+📅 วันที่: ${dateString}
+⏰ เวลา: ${timeString}
+📊 สถานะ: ${attendanceStatus}
+            
+✅ ได้ถ่ายรูปเป็นหลักฐานแล้ว`;
+            
+            // Send to LINE (using LINE's URL scheme)
+            const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(message)}`;
+            
+            // Also try to open LINE app directly
+            const lineAppUrl = `line://msg/text/${encodeURIComponent(message)}`;
+            
+            // Create a temporary link and click it
+            const link = document.createElement('a');
+            link.href = lineUrl;
+            link.target = '_blank';
+            link.click();
+            
+            // Try to open LINE app as well
+            setTimeout(() => {
+                window.location.href = lineAppUrl;
+            }, 1000);
+            
+            showStatus('กำลังส่งข้อมูลไปยัง LINE... 📤', 'success');
+            
+            // Reset form after sending
+            setTimeout(() => {
+                document.getElementById('studentName').value = '';
+                document.getElementById('studentId').value = '';
+                document.getElementById('className').value = '';
+                document.getElementById('photoPreview').classList.add('hidden');
+                document.getElementById('submitAttendance').disabled = true;
+                document.getElementById('capturePhoto').disabled = true;
+                
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                    stream = null;
+                }
+                
+                showStatus('ส่งข้อมูลเรียบร้อย! สามารถเช็คชื่อครั้งถัดไปได้', 'success');
+            }, 2000);
+        });
+
+        // Show status message
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('statusMessage');
+            statusDiv.textContent = message;
+            statusDiv.className = `mt-4 p-4 rounded-lg ${type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`;
+            statusDiv.classList.remove('hidden');
+            
+            setTimeout(() => {
+                statusDiv.classList.add('hidden');
+            }, 5000);
+        }
+
+        // Initialize
+        updateTimeAndStatus();
+        setInterval(updateTimeAndStatus, 1000);
+
+        // Prevent right-click and other methods to save images (anti-cheating)
+        document.addEventListener('contextmenu', e => e.preventDefault());
+        document.addEventListener('dragstart', e => e.preventDefault());
+        document.addEventListener('selectstart', e => e.preventDefault());
+        
+        // Disable screenshot shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'PrintScreen' || 
+                (e.ctrlKey && e.shiftKey && e.key === 'I') ||
+                (e.ctrlKey && e.shiftKey && e.key === 'C') ||
+                (e.ctrlKey && e.key === 's')) {
+                e.preventDefault();
+                showStatus('ไม่อนุญาตให้บันทึกหน้าจอหรือบันทึกไฟล์', 'error');
+            }
+        });
+    </script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'96740406535e4b94',t:'MTc1Mzg2OTY5Ny4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
